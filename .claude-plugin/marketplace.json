@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "lean-tools",
+  "owner": { "name": "Marcel Morgenstern", "url": "https://github.com/marcmorningstar" },
+  "metadata": {
+    "description": "Lean 4 tooling plugins for Claude Code.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "leancheck",
+      "source": "./leancheck",
+      "description": "Warm per-edit Lean 4 diagnostics (via `lake serve`) + a cold `lake build` stop-gate for agentic Lean work."
+    }
+  ]
+}

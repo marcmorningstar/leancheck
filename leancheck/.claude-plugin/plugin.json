@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "leancheck",
+  "version": "0.1.0",
+  "displayName": "leancheck — warm Lean feedback",
+  "description": "Per-edit Lean 4 diagnostics from the real `lake serve` language server, plus an authoritative cold `lake build` gate before an agent may stop.",
+  "author": {
+    "name": "Marcel Morgenstern",
+    "url": "https://github.com/marcmorningstar"
+  },
+  "homepage": "https://github.com/marcmorningstar/leancheck",
+  "repository": "https://github.com/marcmorningstar/leancheck",
+  "license": "Apache-2.0",
+  "keywords": [
+    "lean",
+    "lean4",
+    "lake",
+    "mathlib",
+    "hooks",
+    "lsp",
+    "diagnostics",
+    "verification"
+  ]
+}
