@@ -2,7 +2,9 @@
 
 A [Claude Code](https://code.claude.com) plugin marketplace providing **leancheck** — warm, per-edit
 Lean 4 diagnostics from the real `lake serve` language server, plus an authoritative cold `lake build`
-gate before an agent may finish.
+gate before an agent may finish. Every `lake` build leancheck runs (the warm daemon and the cold gate)
+is serialised behind a per-root, writer-priority lock, so the daemon and the gate never race the same
+build artifacts.
 
 The agent writes Lean and reads compiler-style errors automatically; it never sees the LSP protocol.
 Works with any Lean 4 + Lake project, and is Mathlib-aware (it won't silently start a multi-hour
