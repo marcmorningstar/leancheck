@@ -6,6 +6,8 @@ per-project-root daemon key and the Mathlib-not-built guard — so this hook is 
 the touched module for the Stop cold-gate, run leancheck, surface its output. Logs to a /tmp debug
 log for observability. `--selftest` runs offline unit tests."""
 import sys, os, json, subprocess, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import leanmod
 
 DEBUG = os.environ.get("LEANCHECK_HOOK_LOG", "/tmp/leancheck-hook.log")
 
@@ -46,9 +48,10 @@ def main():
     session = d.get("session_id", "default")
     env = dict(os.environ, LEANCHECK_ROOT=proj)        # leancheck derives the per-root key from this
     rel = os.path.relpath(os.path.abspath(path), proj)
-    # record the touched module for the Stop cold-gate
+    # record the touched module for the Stop cold-gate (srcDir-aware: a lib with `srcDir = "test"`
+    # exposes `test/Audit.lean` as module `Audit`, not `test.Audit`)
     try:
-        mod = rel[:-5].replace(os.sep, ".")
+        mod = leanmod.file_to_module(path, proj)
         touch = f"/tmp/leancheck-touched-{session}.txt"
         seen = set(open(touch).read().split()) if os.path.exists(touch) else set()
         seen.add(mod); open(touch, "w").write("\n".join(sorted(seen)))

@@ -3,6 +3,8 @@
 # network required. Run from anywhere: `bash tests/run-tests.sh`.
 set -euo pipefail
 cd "$(dirname "$0")/../scripts"
+echo "== leanmod.py     (srcDir-aware file<->module mapping; honours each lean_lib's srcDir) =="
+python3 leanmod.py --selftest
 echo "== leancheck.py   (LSP -> compiler-style formatting, Mathlib-rebuild guard, per-root key/lock/pid) =="
 python3 leancheck.py --selftest
 echo "== post-edit hook (target detection + LEANCHECK_INCLUDE filter, warm/cold context, JSON envelope) =="

@@ -38,6 +38,8 @@ before reading diagnostics, so a re-check never returns stale results for the ed
 `lake build` is the source of truth.
 """
 import sys, os, json, socket, subprocess, time, argparse, re, threading, hashlib
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import leanmod
 
 ROOT = os.path.realpath(os.environ.get("LEANCHECK_ROOT", os.getcwd()))
 KEY = os.environ.get("LEANCHECK_KEY") or ("leancheck-" + hashlib.sha1(ROOT.encode()).hexdigest()[:8])
@@ -401,8 +403,8 @@ def stop_daemon():
 
 def module_of(target):
     if not target.endswith(".lean"):
-        return target
-    return os.path.relpath(os.path.abspath(target), ROOT)[:-5].replace("/", ".")
+        return target                              # already a module name
+    return leanmod.file_to_module(target, ROOT)    # srcDir-aware (honours each lib's `srcDir`)
 
 def cold_check(target):
     g = mathlib_guard()

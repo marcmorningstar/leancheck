@@ -10,6 +10,8 @@ prepends a loud UNVERIFIED banner so the failure is surfaced, never hung.
 
 Appends one line per invocation to the /tmp debug log. `--selftest` runs offline unit tests."""
 import sys, os, json, subprocess, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import leanmod
 
 MAX_TRIES = 6
 DEBUG = os.environ.get("LEANCHECK_HOOK_LOG", "/tmp/leancheck-hook.log")
@@ -22,20 +24,17 @@ def read_modules(touch):
         return []
     return [m for m in open(touch).read().split() if m]
 
-def module_to_path(mod, proj):
-    """Module name -> its `.lean` source path, e.g. `MyLib.Sub.Foo` ->
-    `<proj>/MyLib/Sub/Foo.lean` (assumes module names mirror paths from the project root)."""
-    return os.path.join(proj, mod.replace(".", os.sep) + ".lean")
-
 def filter_present(modules, proj):
     """Split the touched modules into (present, skipped) by whether their source still exists.
-    A throwaway probe module that was edited (so it landed in the touched-list) and then deleted
-    leaves a PHANTOM entry: `lake build` of it fails with 'no source' and would wrongly block the
-    stop, which previously forced agents to leave probe files lying around. We skip such entries
-    (and log them) so a deleted module never blocks the gate; a real module is still always built."""
+    Existence is resolved srcDir-aware (a lib with `srcDir = "test"` keeps module `Audit` at
+    `test/Audit.lean`), so a real module is never mistaken for a phantom. A throwaway probe module
+    that was edited (landing in the touched-list) and then deleted leaves a PHANTOM with no source:
+    `lake build` of it fails with 'no source' and would wrongly block the stop (which previously
+    forced agents to leave probe files lying around), so we skip such entries (and log them); a real
+    module is still always built."""
     present, skipped = [], []
     for m in modules:
-        (present if os.path.exists(module_to_path(m, proj)) else skipped).append(m)
+        (present if leanmod.module_source(m, proj) else skipped).append(m)
     return present, skipped
 
 def block_reason(failures, tries, max_tries):
@@ -114,6 +113,14 @@ def selftest():
     assert present == ["MyLib.Sub.Real"], present
     assert skipped == ["MyLib.Sub.Ghost"], skipped
     assert filter_present([], proj) == ([], [])
+    # srcDir-aware: a lib with `srcDir = "test"` keeps module `Audit` at test/Audit.lean (present,
+    # not a phantom) — the case that previously made the gate fail on `lake build test.Audit`.
+    with open(os.path.join(proj, "lakefile.toml"), "w") as lf:
+        lf.write('[[lean_lib]]\nname = "Audit"\nsrcDir = "test"\n')
+    os.makedirs(os.path.join(proj, "test"))
+    open(os.path.join(proj, "test", "Audit.lean"), "w").close()
+    leanmod.src_dirs.cache_clear()
+    assert filter_present(["Audit", "Ghost"], proj) == (["Audit"], ["Ghost"])
     assert block_reason([], 1, 6) == (None, True)
     reason, allow = block_reason(["### M\nerr"], 1, 6)
     assert allow is False and "FAILED" in reason and "err" in reason, reason
