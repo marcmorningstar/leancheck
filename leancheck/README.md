@@ -143,6 +143,36 @@ workflow** where one coordinator drives the edits and a final build, set `LEANCH
 sub-agents finish on warm feedback and the orchestrator runs the single authoritative `lake build`
 after the work settles.
 
+### `lwt` — one build-warm worktree per agent
+
+`scripts/lwt.py` (slash command **`/lwt`**) provisions that per-agent worktree in one step, so an
+orchestrator can fan out many agents that never collide and each is ready to build on turn one:
+
+```bash
+WT=$(python3 "$CLAUDE_PLUGIN_ROOT/scripts/lwt.py" add my-branch | tail -1)   # create + warm
+# ... spawn an agent with cwd = $WT; it gets its own daemon and incremental builds ...
+python3 "$CLAUDE_PLUGIN_ROOT/scripts/lwt.py" remove my-branch --delete-branch # clean teardown
+```
+
+It mirrors `git worktree` (`add` / `remove` / `list` / `prune`) and does three things the manual
+recipe gets wrong by hand:
+
+- **`.lake/packages` → symlink** to the main checkout's immutable Mathlib/dependency cache (multi-GB,
+  never copied; read-only at build time).
+- **`.lake/build` → full copy** of the compiled local libraries *including the `.trace`/`.olean.hash`
+  sidecars* — done with `cp --reflink=auto` (a CoW clone when src and dst share one CoW-capable
+  filesystem, otherwise a plain copy). Lake's up-to-date check is **hash-based**: drop a trace and it
+  re-elaborates the whole local library from scratch, so a faithful copy is what makes the worktree's
+  first `lake build` a genuine no-op. The agent then only rebuilds the modules it actually edits.
+- **A detached warm `lake serve`** for the new root, so first-edit diagnostics are ready immediately.
+  `remove` stops that daemon and removes the tree without ever touching the shared cache.
+
+`list` annotates each worktree as `lwt`/`—` (provisioned?) and `warm`/`cold` (daemon live?). Set
+`LWT_BASE_DIR` to put worktrees on a fast/CoW-capable filesystem when the main checkout is on a slow
+mount (e.g. a WSL2 9p/drvfs workdir with worktrees on overlay/ext4 — note a CoW clone is impossible
+*across* filesystems, so that case falls back to a plain copy). `LWT_MAIN` overrides the main checkout
+whose `.lake` is shared (default: the detected git common dir).
+
 ## Cross-file behavior (honest)
 
 `lake serve` resolves `import`s from compiled `.olean`, **not** from other files' live buffers. So a

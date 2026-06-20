@@ -4,13 +4,13 @@
   "owner": { "name": "Marcel Morgenstern", "url": "https://github.com/marcmorningstar" },
   "metadata": {
     "description": "Lean 4 tooling plugins for Claude Code.",
-    "version": "0.2.1"
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "leancheck",
       "source": "./leancheck",
-      "description": "Warm per-edit Lean 4 diagnostics (via `lake serve`) + a cold `lake build` stop-gate for agentic Lean work."
+      "description": "Warm per-edit Lean 4 diagnostics (via `lake serve`) + a cold `lake build` stop-gate + `lwt` build-warm git worktrees per parallel agent."
     }
   ]
 }
