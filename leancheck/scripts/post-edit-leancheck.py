@@ -44,6 +44,14 @@ def main():
     if not is_target(tool, path):
         return 0
     proj = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+    # Skip edits to files OUTSIDE this project root (e.g. a sibling git worktree under /home/...):
+    # `file_to_module` would relpath them to `../../home/...` and record a mangled `......home...`
+    # token that pollutes the touched-list and breaks the cold gate. Such a file belongs to another
+    # root's daemon, not this one.
+    pathabs, projabs = os.path.realpath(path), os.path.realpath(proj)
+    if not (pathabs == projabs or pathabs.startswith(projabs + os.sep)):
+        dbg(f"skip edit outside project root ({proj}): {path}")
+        return 0
     leancheck = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leancheck.py")
     session = d.get("session_id", "default")
     env = dict(os.environ, LEANCHECK_ROOT=proj)        # leancheck derives the per-root key from this
