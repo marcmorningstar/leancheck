@@ -4,7 +4,7 @@
   "owner": { "name": "Marcel Morgenstern", "url": "https://github.com/marcmorningstar" },
   "metadata": {
     "description": "Lean 4 tooling plugins for Claude Code.",
-    "version": "0.2.0"
+    "version": "0.2.1"
   },
   "plugins": [
     {
