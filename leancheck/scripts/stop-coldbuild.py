@@ -86,6 +86,15 @@ def defer_reason(modules, tries, max_tries):
             f"were never cold-built this session: {mods}. Report this as UNVERIFIED (do NOT claim "
             "success).", True)
 
+def read_tries(path):
+    """The per-session retry counter, robust to a missing/empty/corrupt file: any unreadable value
+    reads as 0 so a bad counter (e.g. an interrupted truncating write leaving it empty, which made
+    `int('')` raise) never crashes the Stop hook."""
+    try:
+        return int(open(path).read().strip())
+    except (ValueError, OSError):
+        return 0
+
 # ---------------------------------------------------------------- side effects
 
 def dbg(msg):
@@ -125,7 +134,7 @@ def main():
         return 0                                   # verified clean -> allow stop
 
     triesf = f"/tmp/leancheck-tries-{session}.txt"
-    tries = (int(open(triesf).read()) if os.path.exists(triesf) else 0) + 1
+    tries = read_tries(triesf) + 1
     open(triesf, "w").write(str(tries))
     if kind == "deferred":                         # lock busy -> NOT verified: retry, never a clean pass
         reason, allow = defer_reason(modules, tries, MAX_TRIES)
@@ -184,6 +193,13 @@ def selftest():
     assert "MyLib.A" in reason and "MyLib.B" in reason, reason
     reason, allow = defer_reason(["MyLib.A"], 7, 6)
     assert allow is True and "UNVERIFIED" in reason, reason
+    # retry counter: robust to missing/empty/corrupt files -> 0 (never crash the Stop hook on int(''))
+    assert read_tries("/no/such/leancheck-tries") == 0
+    tf = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False); tf.write(""); tf.close()
+    assert read_tries(tf.name) == 0                 # empty (interrupted write) -> 0, not ValueError
+    open(tf.name, "w").write("  bogus "); assert read_tries(tf.name) == 0   # corrupt -> 0
+    open(tf.name, "w").write(" 3\n"); assert read_tries(tf.name) == 3       # valid -> parsed
+    os.remove(tf.name)
     print("stop-coldbuild selftest OK")
     return 0
 
