@@ -41,12 +41,21 @@ def file_to_module(path, root):
 
 def module_source(mod, root):
     """First existing source path for `mod` across the declared srcDirs, or `None`. Tries
-    `<root>/<srcDir>/A/B.lean` for each srcDir (default `''` = the project root)."""
+    `<root>/<srcDir>/A/B.lean` for each srcDir (default `''` = the project root). The resolved
+    candidate must lie strictly UNDER `root`; otherwise `None`. This guards against a mangled token
+    such as `......home.vscode.wt.Foo`, whose dot->sep expansion is an ABSOLUTE `/home/...` path that
+    `os.path.join(root, ...)` silently resolves OUTSIDE the project (e.g. into a sibling git
+    worktree) — which used to make the cold gate try to `lake build` a foreign module (`unknown
+    target`)."""
     sub = mod.replace(".", os.sep) + ".lean"
+    if os.path.isabs(sub):                          # leading-dot mangle -> absolute path: never ours
+        return None
+    rootabs = os.path.realpath(root)
     for d in src_dirs(root):
         cand = os.path.join(root, d, sub) if d else os.path.join(root, sub)
-        if os.path.exists(cand):
-            return cand
+        candabs = os.path.realpath(cand)
+        if (candabs == rootabs or candabs.startswith(rootabs + os.sep)) and os.path.exists(cand):
+            return cand                             # accept only sources strictly under the root
     return None
 
 def selftest():
@@ -69,6 +78,9 @@ def selftest():
         assert module_source("MyLib.Sub.Foo", root) == os.path.join(root, "MyLib", "Sub", "Foo.lean")
         assert module_source("Audit", root) == os.path.join(root, "test", "Audit.lean")
         assert module_source("Nope.Gone", root) is None
+        # a mangled sibling-worktree token expands (dot->sep) to an ABSOLUTE path that os.path.join
+        # would resolve OUTSIDE the project; it must be rejected (the Stop-gate `unknown target` bug)
+        assert module_source("......home.vscode.wt.Foo", root) is None
         # no lakefile -> only the default root srcDir; module mirrors the path
         empty = tempfile.mkdtemp()
         try:
