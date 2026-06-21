@@ -43,7 +43,10 @@ def main():
     path = ti.get("file_path") or ti.get("path") or ""
     if not is_target(tool, path):
         return 0
-    proj = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+    # The Lake package is `$CLAUDE_PROJECT_DIR` for a single-package repo, or its subdir for a
+    # monorepo (LEANCHECK_PROJECT_SUBDIR) — project_root resolves both. Everything below (the
+    # outside-root skip, LEANCHECK_ROOT, the relpath, the module mapping) keys off this one `proj`.
+    proj = leanmod.project_root(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()))
     # Skip edits to files OUTSIDE this project root (e.g. a sibling git worktree under /home/...):
     # `file_to_module` would relpath them to `../../home/...` and record a mangled `......home...`
     # token that pollutes the touched-list and breaks the cold gate. Such a file belongs to another

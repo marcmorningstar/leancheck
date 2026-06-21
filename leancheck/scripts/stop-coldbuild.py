@@ -113,7 +113,10 @@ def main():
         dbg("stop-gate disabled via LEANCHECK_STOP_GATE -> allow stop (orchestrator owns the cold build)")
         return 0
     session = d.get("session_id", "default")
-    proj = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+    # Single-package repo: the Lake package is `$CLAUDE_PROJECT_DIR`. Monorepo: its subdir
+    # (LEANCHECK_PROJECT_SUBDIR). project_root resolves both; the cold build + module existence
+    # checks below all key off this one `proj`.
+    proj = leanmod.project_root(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()))
     leancheck_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leancheck.py")
     modules = read_modules(f"/tmp/leancheck-touched-{session}.txt")
     modules, skipped = filter_present(modules, proj)

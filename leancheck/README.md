@@ -84,6 +84,7 @@ leancheck --selftest         # offline unit tests of the pure logic
 |---|---|---|
 | `LEANCHECK_INCLUDE` | *(unset)* | restrict per-edit checks to files whose path contains this substring (e.g. `MyLib` to skip scratch files). Unset = every project `.lean` outside `.lake/`. |
 | `LEANCHECK_ROOT` | `cwd` / `$CLAUDE_PROJECT_DIR` | the project root the daemon binds to. |
+| `LEANCHECK_PROJECT_SUBDIR` | *(unset)* | **monorepo support.** The Lake package's subdir within the repo, when the package is **not** at the repo root. The hooks then bind to `$CLAUDE_PROJECT_DIR/<subdir>` (and `lwt` to `<worktree>/<subdir>`) instead of the repo root. Empty/unset = package at the repo root (the common case), so single-package repos are unaffected. See [Monorepos](#monorepos). |
 | `LEANCHECK_PREVENT_CACHE_GET` | `1` | keep `lake serve` from auto-fetching the Mathlib cache on startup (the plugin assumes the project is already built). Set `0` to allow it. |
 | `LEANCHECK_ALLOW_MATHLIB_REBUILD` | *(unset)* | set `1` to opt past the Mathlib-rebuild guard and accept a from-scratch compile. |
 | `LEANCHECK_STOP_GATE` | `build` | the Stop cold-build gate. `off`/`none`/`0`/`false` disables it, so an orchestrator can run one authoritative build itself instead of every sub-agent re-building on each stop. |
@@ -171,7 +172,28 @@ recipe gets wrong by hand:
 `LWT_BASE_DIR` to put worktrees on a fast/CoW-capable filesystem when the main checkout is on a slow
 mount (e.g. a WSL2 9p/drvfs workdir with worktrees on overlay/ext4 — note a CoW clone is impossible
 *across* filesystems, so that case falls back to a plain copy). `LWT_MAIN` overrides the main checkout
-whose `.lake` is shared (default: the detected git common dir).
+whose `.lake` is shared (default: the detected git common dir). For a **monorepo** whose Lake package
+is in a subdir, set `LEANCHECK_PROJECT_SUBDIR` (see [Monorepos](#monorepos)): the worktree stays
+repo-level but `lwt` shares/warms `<worktree>/<subdir>/.lake`.
+
+## Monorepos
+
+By default the Lake package is assumed to be the repo root (`$CLAUDE_PROJECT_DIR`). In a **monorepo**
+the package often lives in a subdirectory — e.g. the only `lakefile.toml`/`.lake` are under
+`subproj/`, while `.claude/` and the git root are one level up. Point leancheck at it with one env
+var (e.g. in the project's `.claude/settings.json`):
+
+```jsonc
+// .claude/settings.json
+{ "env": { "LEANCHECK_PROJECT_SUBDIR": "subproj" } }
+```
+
+Then the warm daemon, the per-edit check, the cold-build gate, and `lwt` all resolve the package at
+`$CLAUDE_PROJECT_DIR/subproj` (resp. `<worktree>/subproj`) — module names, the daemon root, and the
+shared `.lake` are all computed there. `git worktree` is still repo-level (it must be), but `lwt`
+shares/warms the **subdir's** `.lake`. Unset/empty leaves every path at the repo root, so this is
+fully backward-compatible. (Edits outside the subdir are silently skipped by the per-edit hook — they
+are not part of this Lake package.)
 
 ## Cross-file behavior (honest)
 

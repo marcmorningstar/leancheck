@@ -58,6 +58,18 @@ def module_source(mod, root):
             return cand                             # accept only sources strictly under the root
     return None
 
+def project_root(base, subdir=None):
+    """The Lake project root inside a checkout: `base/<subdir>` when a subdir is given (a monorepo
+    whose Lake package is NOT at the repo root), else `base` unchanged. `subdir` defaults to the
+    `LEANCHECK_PROJECT_SUBDIR` env var; an empty/whitespace value means 'no subdir' (root == base),
+    so a single-package repo (the common case) is wholly unaffected. This is the one canonical
+    definition; the shell SessionStart hook and `lwt.py` mirror it inline (no Python import there)."""
+    if subdir is None:
+        subdir = os.environ.get("LEANCHECK_PROJECT_SUBDIR", "")
+    subdir = subdir.strip().strip("/\\")
+    return os.path.join(base, subdir) if subdir else base
+
+
 def selftest():
     import tempfile, shutil
     root = tempfile.mkdtemp()
@@ -92,6 +104,17 @@ def selftest():
     finally:
         src_dirs.cache_clear()
         shutil.rmtree(root, ignore_errors=True)
+    # project_root: explicit subdir joins; empty/whitespace = base unchanged (single-package repo);
+    # default reads LEANCHECK_PROJECT_SUBDIR (unset -> base unchanged).
+    assert project_root("/repo", "sub") == os.path.join("/repo", "sub")
+    assert project_root("/repo", "") == "/repo" and project_root("/repo", "   ") == "/repo"
+    assert project_root("/repo", "/sub/") == os.path.join("/repo", "sub")
+    os.environ["LEANCHECK_PROJECT_SUBDIR"] = "pkg/lean"
+    try:
+        assert project_root("/repo") == os.path.join("/repo", "pkg", "lean")
+    finally:
+        del os.environ["LEANCHECK_PROJECT_SUBDIR"]
+    assert project_root("/repo") == "/repo"
     print("leanmod selftest OK")
     return 0
 

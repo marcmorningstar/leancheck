@@ -30,8 +30,11 @@ orchestrator can capture it:  WT=$(lwt add my-branch | tail -1).
 
 Env: LWT_MAIN (main checkout; default = detected git common dir, else cwd), LWT_BASE_DIR (where
 worktrees are created; default = the main checkout's parent dir — point this at a fast/CoW-capable
-filesystem if the main checkout lives on a slow mount such as WSL2 9p/drvfs), LEANCHECK_SCRIPT
-(path to leancheck.py; default = sibling of this file).
+filesystem if the main checkout lives on a slow mount such as WSL2 9p/drvfs), LEANCHECK_PROJECT_SUBDIR
+(the Lake package's subdir within the repo, for a monorepo whose package is NOT at the repo root —
+the worktree is still repo-level but the shared `.lake` and the warm daemon bind to `<tree>/<subdir>`;
+empty/unset = package at the repo root), LEANCHECK_SCRIPT (path to leancheck.py; default = sibling of
+this file).
 """
 from __future__ import annotations
 
@@ -44,6 +47,16 @@ import sys
 import time
 
 WT_INFIX = "-lwt-"
+
+# A monorepo's Lake package may live in a SUBDIR, not at the repo root. `git worktree` is always
+# repo-level, but the `.lake` to share/warm — and the daemon's root — is the subdir's. SUBDIR names
+# it (empty/unset = package at the repo root, the common case). Mirrors leanmod.project_root.
+SUBDIR = os.environ.get("LEANCHECK_PROJECT_SUBDIR", "").strip().strip("/\\")
+
+
+def lake_root(tree: str) -> str:
+    """The Lake project root within a checkout/worktree `tree`: its SUBDIR (monorepo) or `tree` itself."""
+    return os.path.join(tree, SUBDIR) if SUBDIR else tree
 
 
 def log(msg: str) -> None:
@@ -102,7 +115,7 @@ def find_leancheck() -> str | None:
 
 def sock_path(wt: str) -> str:
     """The socket leancheck.py derives for a root (mirrors its KEY formula) — for liveness display."""
-    root = os.path.realpath(wt)
+    root = os.path.realpath(lake_root(wt))
     key = os.environ.get("LEANCHECK_KEY") or ("leancheck-" + hashlib.sha1(root.encode()).hexdigest()[:8])
     return os.path.join(os.environ.get("LEANCHECK_SOCKDIR", "/tmp"), f"leancheck-{key}.sock")
 
@@ -110,17 +123,19 @@ def sock_path(wt: str) -> str:
 # ---------------------------------------------------------------- provisioning
 
 def provision_lake(main: str, wt: str) -> None:
-    src_pkgs = os.path.join(main, ".lake", "packages")
-    src_build = os.path.join(main, ".lake", "build")
+    # The Lake package (and thus `.lake`) is the SUBDIR's in a monorepo, the tree root's otherwise.
+    src_root, dst_root = lake_root(main), lake_root(wt)
+    src_pkgs = os.path.join(src_root, ".lake", "packages")
+    src_build = os.path.join(src_root, ".lake", "build")
     if not os.path.isdir(src_build):
         die(f"{src_build} missing — build the main checkout first (lake build).")
 
-    os.makedirs(os.path.join(wt, ".lake"), exist_ok=True)
+    os.makedirs(os.path.join(dst_root, ".lake"), exist_ok=True)
 
     # Shared immutable dependency cache (incl. Mathlib's multi-GB oleans): symlink, never copy.
     # `.lake/packages` is absent for a dependency-free project — then there is nothing to share.
     if os.path.isdir(src_pkgs):
-        link = os.path.join(wt, ".lake", "packages")
+        link = os.path.join(dst_root, ".lake", "packages")
         if os.path.islink(link) or os.path.exists(link):
             (os.unlink if os.path.islink(link) else shutil.rmtree)(link)
         os.symlink(src_pkgs, link)
@@ -131,7 +146,7 @@ def provision_lake(main: str, wt: str) -> None:
     # = CoW clone when src and dst share a CoW-capable FS, else a plain copy — one command, never
     # partial, never nested. (A CoW clone is impossible across different filesystems, e.g. a 9p
     # workdir vs an overlay/ext4 worktree base — then it simply copies.)
-    dst_build = os.path.join(wt, ".lake", "build")
+    dst_build = os.path.join(dst_root, ".lake", "build")
     if os.path.exists(dst_build):
         shutil.rmtree(dst_build)
     t0 = time.monotonic()
@@ -146,10 +161,11 @@ def warm(wt: str, seed_file: str | None) -> None:
     if not lc:
         log(">> leancheck.py not found — skipping warm (cold `lake build` still works)")
         return
-    env = dict(os.environ, LEANCHECK_ROOT=os.path.realpath(wt))
+    root = os.path.realpath(lake_root(wt))
+    env = dict(os.environ, LEANCHECK_ROOT=root)
     cmd = [sys.executable, lc, "--warm"] + ([seed_file] if seed_file else [])
     logf = open(f"/tmp/lwt-warm-{slug(os.path.basename(wt))}.log", "ab")
-    subprocess.Popen(cmd, env=env, stdout=logf, stderr=logf, start_new_session=True, cwd=wt)
+    subprocess.Popen(cmd, env=env, stdout=logf, stderr=logf, start_new_session=True, cwd=root)
     # Poll briefly for the socket so we can confirm the daemon started (its `lake serve` keeps
     # importing in the background under leancheck's own warm budget — we don't block on that).
     sp = sock_path(wt)
@@ -165,7 +181,7 @@ def stop_daemon(wt: str) -> None:
     lc = find_leancheck()
     if not lc:
         return
-    env = dict(os.environ, LEANCHECK_ROOT=os.path.realpath(wt))
+    env = dict(os.environ, LEANCHECK_ROOT=os.path.realpath(lake_root(wt)))
     subprocess.run([sys.executable, lc, "--stop"], env=env,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     log(">> stopped worktree leancheck daemon")
@@ -249,7 +265,7 @@ def cmd_list(a) -> None:
     main = main_repo()
     for w in worktrees(main):
         path = w["path"]
-        prov = "lwt" if os.path.islink(os.path.join(path, ".lake", "packages")) else "—"
+        prov = "lwt" if os.path.islink(os.path.join(lake_root(path), ".lake", "packages")) else "—"
         flame = "warm" if os.path.exists(sock_path(path)) else "cold"
         print(f"{path}  [{w.get('branch', w.get('head', '?'))}]  {prov}  {flame}")
 
